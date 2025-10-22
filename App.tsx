@@ -7,7 +7,22 @@ import { Loader } from './components/Loader';
 import { editImage } from './services/geminiService';
 import type { UploadedImage } from './types';
 
+// Fix: Define the AIStudio interface to resolve TypeScript errors.
+// The error "Property 'aistudio' must be of type 'AIStudio'" suggests a named
+// type is expected for the global window.aistudio property.
+interface AIStudio {
+  hasSelectedApiKey: () => Promise<boolean>;
+  openSelectKey: () => Promise<void>;
+}
+
+declare global {
+  interface Window {
+    aistudio: AIStudio;
+  }
+}
+
 const App: React.FC = () => {
+  const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
   const [selectedImage, setSelectedImage] = useState<UploadedImage | null>(null);
   const [prompt, setPrompt] = useState<string>('');
@@ -16,10 +31,33 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const checkApiKey = async () => {
+      try {
+        const hasKey = await window.aistudio.hasSelectedApiKey();
+        setHasApiKey(hasKey);
+      } catch (e) {
+        console.error("Error checking for API key:", e);
+        setHasApiKey(false);
+      }
+    };
+    checkApiKey();
+  }, []);
+
+  useEffect(() => {
     return () => {
       uploadedImages.forEach(image => URL.revokeObjectURL(image.previewUrl));
     };
   }, [uploadedImages]);
+
+  const handleSelectKey = async () => {
+    try {
+      await window.aistudio.openSelectKey();
+      setHasApiKey(true);
+    } catch (e) {
+      console.error("Error opening select key dialog:", e);
+      setError("Could not open API key selection. Please try again.");
+    }
+  };
 
   const handleFilesChange = (files: FileList | null) => {
     if (files && files.length > 0) {
@@ -64,11 +102,49 @@ const App: React.FC = () => {
       setGeneratedImage(result);
     } catch (e) {
       console.error(e);
-      setError(e instanceof Error ? e.message : 'An unknown error occurred.');
+      const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
+      if (errorMessage.includes("Requested entity was not found.")) {
+          setError("Your API key is invalid. Please select a new one.");
+          setHasApiKey(false);
+      } else {
+          setError(errorMessage);
+      }
     } finally {
       setIsLoading(false);
     }
   }, [selectedImage, prompt]);
+
+  if (hasApiKey === null) {
+    return (
+      <div className="min-h-screen bg-gray-900 text-gray-200 flex items-center justify-center">
+        <Loader message="Checking for API Key..." />
+      </div>
+    );
+  }
+
+  if (hasApiKey === false) {
+    return (
+      <div className="min-h-screen bg-gray-900 text-gray-200 flex items-center justify-center font-sans">
+        <div className="max-w-md w-full bg-gray-800 p-8 rounded-lg shadow-2xl text-center mx-4">
+          <h1 className="text-3xl font-bold text-white mb-4">API Key Required</h1>
+          <p className="text-gray-400 mb-6">
+            To use the Gemini Image Editor, you need to select a Google AI Studio API key. Your key is used only to make requests and is not stored. For more information on billing, see the <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="text-teal-400 hover:underline">documentation</a>.
+          </p>
+          <button
+            onClick={handleSelectKey}
+            className="bg-teal-600 hover:bg-teal-500 text-white font-bold py-3 px-6 rounded-lg transition-colors duration-300 shadow-md w-full"
+          >
+            Select API Key
+          </button>
+          {error && (
+            <div className="mt-4 bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded-lg relative" role="alert">
+              <span className="block sm:inline">{error}</span>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-200 font-sans">
@@ -147,7 +223,7 @@ const App: React.FC = () => {
             </div>
           </section>
 
-          {error && (
+          {error && !hasApiKey && (
             <div className="bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded-lg relative" role="alert">
               <strong className="font-bold">Error: </strong>
               <span className="block sm:inline">{error}</span>
