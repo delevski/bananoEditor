@@ -7,8 +7,52 @@ import { Loader } from './components/Loader';
 import { editImage } from './services/geminiService';
 import type { UploadedImage } from './types';
 
+const API_KEY_STORAGE_KEY = 'gemini-api-key';
+
+const ApiKeyInput: React.FC<{ onApiKeySubmit: (key: string) => void }> = ({ onApiKeySubmit }) => {
+  const [localApiKey, setLocalApiKey] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (localApiKey.trim()) {
+      onApiKeySubmit(localApiKey.trim());
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-gray-900 bg-opacity-95 flex items-center justify-center z-50">
+      <div className="w-full max-w-md p-8 bg-gray-800 rounded-2xl shadow-2xl border border-gray-700">
+        <h2 className="text-2xl font-bold text-center text-teal-400 mb-2">Enter Your Gemini API Key</h2>
+        <p className="text-center text-gray-400 mb-6">You can get a free key from Google AI Studio.</p>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input
+            type="password"
+            value={localApiKey}
+            onChange={(e) => setLocalApiKey(e.target.value)}
+            placeholder="Paste your API key here"
+            className="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-teal-500 focus:outline-none transition"
+            autoFocus
+          />
+          <button
+            type="submit"
+            className="w-full bg-teal-600 hover:bg-teal-500 text-white font-bold py-3 px-6 rounded-lg transition-colors duration-300 shadow-md disabled:bg-gray-500 disabled:cursor-not-allowed"
+            disabled={!localApiKey.trim()}
+          >
+            Save and Continue
+          </button>
+        </form>
+         <p className="text-xs text-center text-gray-500 mt-4">
+            Your key is stored only in your browser's local storage.
+        </p>
+      </div>
+    </div>
+  );
+};
+
 
 const App: React.FC = () => {
+  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
   const [selectedImage, setSelectedImage] = useState<UploadedImage | null>(null);
   const [prompt, setPrompt] = useState<string>('');
@@ -17,11 +61,27 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const storedKey = localStorage.getItem(API_KEY_STORAGE_KEY);
+    if (storedKey) {
+      setApiKey(storedKey);
+    } else {
+      setShowApiKeyModal(true);
+    }
+  }, []);
+
+  useEffect(() => {
     return () => {
       uploadedImages.forEach(image => URL.revokeObjectURL(image.previewUrl));
     };
   }, [uploadedImages]);
 
+  const handleApiKeySubmit = (key: string) => {
+    setApiKey(key);
+    localStorage.setItem(API_KEY_STORAGE_KEY, key);
+    setShowApiKeyModal(false);
+    setError(null);
+  };
+  
   const handleFilesChange = (files: FileList | null) => {
     if (files && files.length > 0) {
       const newImages = Array.from(files).map(file => ({
@@ -47,6 +107,11 @@ const App: React.FC = () => {
   };
 
   const handleSubmit = useCallback(async () => {
+    if (!apiKey) {
+      setError('API Key is not set. Please provide your API key.');
+      setShowApiKeyModal(true);
+      return;
+    }
     if (!selectedImage) {
       setError('Please select an image to edit.');
       return;
@@ -61,23 +126,27 @@ const App: React.FC = () => {
     setGeneratedImage(null);
 
     try {
-      const result = await editImage(selectedImage.file, prompt);
+      const result = await editImage(selectedImage.file, prompt, apiKey);
       setGeneratedImage(result);
     } catch (e) {
       console.error(e);
       const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
       if (errorMessage.includes("API key not valid") || errorMessage.includes("API key is invalid")) {
-          setError("The API key configured in the environment is invalid. Please check your cloud secrets.");
+          setError("Your API key is invalid. Please enter a valid key.");
+          localStorage.removeItem(API_KEY_STORAGE_KEY);
+          setApiKey(null);
+          setShowApiKeyModal(true);
       } else {
-          setError(errorMessage);
+          setError(`An error occurred: ${errorMessage}`);
       }
     } finally {
       setIsLoading(false);
     }
-  }, [selectedImage, prompt]);
+  }, [selectedImage, prompt, apiKey]);
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-200 font-sans">
+      {showApiKeyModal && <ApiKeyInput onApiKeySubmit={handleApiKeySubmit} />}
       {isLoading && <Loader />}
       <Header />
       <main className="container mx-auto p-4 md:p-8">
