@@ -8,22 +8,10 @@ import { Loader } from './components/Loader';
 import { editImage } from './services/geminiService';
 import type { UploadedImage } from './types';
 
-// Fix for line 20: Moved the AIStudio interface definition inside the `declare global`
-// block to correctly augment the global scope and resolve TypeScript
-// errors about duplicate or mismatched declarations.
-declare global {
-  interface AIStudio {
-    hasSelectedApiKey: () => Promise<boolean>;
-    openSelectKey: () => Promise<void>;
-  }
-
-  interface Window {
-    aistudio: AIStudio;
-  }
-}
 
 const App: React.FC = () => {
-  const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
+  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [isKeyChecked, setIsKeyChecked] = useState(false);
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
   const [selectedImage, setSelectedImage] = useState<UploadedImage | null>(null);
   const [prompt, setPrompt] = useState<string>('');
@@ -32,31 +20,11 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let attempts = 0;
-    const maxAttempts = 50; // Try for 5 seconds
-
-    const checkApiKey = async () => {
-      if (typeof window.aistudio?.hasSelectedApiKey !== 'function') {
-        attempts++;
-        if (attempts < maxAttempts) {
-          setTimeout(checkApiKey, 100);
-        } else {
-          console.error("window.aistudio not found after multiple attempts.");
-          setHasApiKey(false); 
-          setError("Could not connect to the API key manager. Please try reloading the page.");
-        }
-        return;
-      }
-
-      try {
-        const hasKey = await window.aistudio.hasSelectedApiKey();
-        setHasApiKey(hasKey);
-      } catch (e) {
-        console.error("Error checking for API key:", e);
-        setHasApiKey(false);
-      }
-    };
-    checkApiKey();
+    const storedKey = localStorage.getItem('gemini-api-key');
+    if (storedKey) {
+      setApiKey(storedKey);
+    }
+    setIsKeyChecked(true);
   }, []);
 
   useEffect(() => {
@@ -65,16 +33,15 @@ const App: React.FC = () => {
     };
   }, [uploadedImages]);
 
-  const handleSelectKey = async () => {
-    try {
-      await window.aistudio.openSelectKey();
-      setHasApiKey(true);
-    } catch (e) {
-      console.error("Error opening select key dialog:", e);
-      setError("Could not open API key selection. Please try again.");
+  const handleKeySubmit = (key: string) => {
+    const trimmedKey = key.trim();
+    if (trimmedKey) {
+      setApiKey(trimmedKey);
+      localStorage.setItem('gemini-api-key', trimmedKey);
+      setError(null);
     }
   };
-
+  
   const handleFilesChange = (files: FileList | null) => {
     if (files && files.length > 0) {
       const newImages = Array.from(files).map(file => ({
@@ -108,50 +75,63 @@ const App: React.FC = () => {
       setError('Please enter a prompt to describe your edit.');
       return;
     }
+    if (!apiKey) {
+      setError('API Key is not set.');
+      return;
+    }
 
     setIsLoading(true);
     setError(null);
     setGeneratedImage(null);
 
     try {
-      const result = await editImage(selectedImage.file, prompt);
+      const result = await editImage(selectedImage.file, prompt, apiKey);
       setGeneratedImage(result);
     } catch (e) {
       console.error(e);
       const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
-      if (errorMessage.includes("Requested entity was not found.")) {
-          setError("Your API key is invalid. Please select a new one.");
-          setHasApiKey(false);
+       if (errorMessage.includes("API key not valid") || errorMessage.includes("API key is invalid")) {
+          setError("Your API key is invalid. Please enter a new one.");
+          setApiKey(null);
+          localStorage.removeItem('gemini-api-key');
       } else {
           setError(errorMessage);
       }
     } finally {
       setIsLoading(false);
     }
-  }, [selectedImage, prompt]);
+  }, [selectedImage, prompt, apiKey]);
 
-  if (hasApiKey === null) {
-    return (
-      <div className="min-h-screen bg-gray-900 text-gray-200 flex items-center justify-center">
-        <Loader message="Checking for API Key..." />
-      </div>
-    );
-  }
+  const ApiKeyInputForm = () => {
+    const [localKey, setLocalKey] = useState('');
+    
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        handleKeySubmit(localKey);
+    };
 
-  if (hasApiKey === false) {
     return (
-      <div className="min-h-screen bg-gray-900 text-gray-200 flex items-center justify-center font-sans">
+        <div className="min-h-screen bg-gray-900 text-gray-200 flex items-center justify-center font-sans">
         <div className="max-w-md w-full bg-gray-800 p-8 rounded-lg shadow-2xl text-center mx-4">
-          <h1 className="text-3xl font-bold text-white mb-4">API Key Required</h1>
+          <h1 className="text-3xl font-bold text-white mb-4">Enter Your API Key</h1>
           <p className="text-gray-400 mb-6">
-            To use the Gemini Image Editor, you need to select a Google AI Studio API key. Your key is used only to make requests and is not stored. For more information on billing, see the <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="text-teal-400 hover:underline">documentation</a>.
+            To use the Gemini Image Editor, please enter your Google AI API key. You can get one for free from <a href="https://makersuite.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-teal-400 hover:underline">Google AI Studio</a>. Your key is saved only in this browser.
           </p>
-          <button
-            onClick={handleSelectKey}
-            className="bg-teal-600 hover:bg-teal-500 text-white font-bold py-3 px-6 rounded-lg transition-colors duration-300 shadow-md w-full"
-          >
-            Select API Key
-          </button>
+          <form onSubmit={handleSubmit}>
+            <input
+                type="password"
+                value={localKey}
+                onChange={(e) => setLocalKey(e.target.value)}
+                placeholder="Enter your Gemini API Key"
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-teal-500 focus:outline-none transition mb-4"
+            />
+            <button
+              type="submit"
+              className="bg-teal-600 hover:bg-teal-500 text-white font-bold py-3 px-6 rounded-lg transition-colors duration-300 shadow-md w-full"
+            >
+              Save API Key
+            </button>
+          </form>
           {error && (
             <div className="mt-4 bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded-lg relative" role="alert">
               <span className="block sm:inline">{error}</span>
@@ -160,6 +140,18 @@ const App: React.FC = () => {
         </div>
       </div>
     );
+  };
+
+  if (!isKeyChecked) {
+    return (
+      <div className="min-h-screen bg-gray-900 text-gray-200 flex items-center justify-center">
+        <Loader message="Initializing..." />
+      </div>
+    );
+  }
+
+  if (!apiKey) {
+    return <ApiKeyInputForm />;
   }
 
   return (
@@ -235,16 +227,15 @@ const App: React.FC = () => {
                     ) : '✨ Generate Image'}
                   </button>
                 </div>
+                 {error && (
+                  <div className="mt-4 bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded-lg relative" role="alert">
+                    <strong className="font-bold">Error: </strong>
+                    <span className="block sm:inline">{error}</span>
+                  </div>
+                )}
               </div>
             </div>
           </section>
-
-          {error && !hasApiKey && (
-            <div className="bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded-lg relative" role="alert">
-              <strong className="font-bold">Error: </strong>
-              <span className="block sm:inline">{error}</span>
-            </div>
-          )}
         </div>
       </main>
     </div>
