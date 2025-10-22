@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { Header } from './components/Header';
 import { ImageUploader } from './components/ImageUploader';
@@ -10,8 +9,6 @@ import type { UploadedImage } from './types';
 
 
 const App: React.FC = () => {
-  const [apiKey, setApiKey] = useState<string | null>(null);
-  const [isKeyChecked, setIsKeyChecked] = useState(false);
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
   const [selectedImage, setSelectedImage] = useState<UploadedImage | null>(null);
   const [prompt, setPrompt] = useState<string>('');
@@ -20,28 +17,11 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const storedKey = localStorage.getItem('gemini-api-key');
-    if (storedKey) {
-      setApiKey(storedKey);
-    }
-    setIsKeyChecked(true);
-  }, []);
-
-  useEffect(() => {
     return () => {
       uploadedImages.forEach(image => URL.revokeObjectURL(image.previewUrl));
     };
   }, [uploadedImages]);
 
-  const handleKeySubmit = (key: string) => {
-    const trimmedKey = key.trim();
-    if (trimmedKey) {
-      setApiKey(trimmedKey);
-      localStorage.setItem('gemini-api-key', trimmedKey);
-      setError(null);
-    }
-  };
-  
   const handleFilesChange = (files: FileList | null) => {
     if (files && files.length > 0) {
       const newImages = Array.from(files).map(file => ({
@@ -75,84 +55,26 @@ const App: React.FC = () => {
       setError('Please enter a prompt to describe your edit.');
       return;
     }
-    if (!apiKey) {
-      setError('API Key is not set.');
-      return;
-    }
 
     setIsLoading(true);
     setError(null);
     setGeneratedImage(null);
 
     try {
-      const result = await editImage(selectedImage.file, prompt, apiKey);
+      const result = await editImage(selectedImage.file, prompt);
       setGeneratedImage(result);
     } catch (e) {
       console.error(e);
       const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
-       if (errorMessage.includes("API key not valid") || errorMessage.includes("API key is invalid")) {
-          setError("Your API key is invalid. Please enter a new one.");
-          setApiKey(null);
-          localStorage.removeItem('gemini-api-key');
+      if (errorMessage.includes("API key not valid") || errorMessage.includes("API key is invalid")) {
+          setError("The API key configured in the environment is invalid. Please check your cloud secrets.");
       } else {
           setError(errorMessage);
       }
     } finally {
       setIsLoading(false);
     }
-  }, [selectedImage, prompt, apiKey]);
-
-  const ApiKeyInputForm = () => {
-    const [localKey, setLocalKey] = useState('');
-    
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        handleKeySubmit(localKey);
-    };
-
-    return (
-        <div className="min-h-screen bg-gray-900 text-gray-200 flex items-center justify-center font-sans">
-        <div className="max-w-md w-full bg-gray-800 p-8 rounded-lg shadow-2xl text-center mx-4">
-          <h1 className="text-3xl font-bold text-white mb-4">Enter Your API Key</h1>
-          <p className="text-gray-400 mb-6">
-            To use the Gemini Image Editor, please enter your Google AI API key. You can get one for free from <a href="https://makersuite.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-teal-400 hover:underline">Google AI Studio</a>. Your key is saved only in this browser.
-          </p>
-          <form onSubmit={handleSubmit}>
-            <input
-                type="password"
-                value={localKey}
-                onChange={(e) => setLocalKey(e.target.value)}
-                placeholder="Enter your Gemini API Key"
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-teal-500 focus:outline-none transition mb-4"
-            />
-            <button
-              type="submit"
-              className="bg-teal-600 hover:bg-teal-500 text-white font-bold py-3 px-6 rounded-lg transition-colors duration-300 shadow-md w-full"
-            >
-              Save API Key
-            </button>
-          </form>
-          {error && (
-            <div className="mt-4 bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded-lg relative" role="alert">
-              <span className="block sm:inline">{error}</span>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  if (!isKeyChecked) {
-    return (
-      <div className="min-h-screen bg-gray-900 text-gray-200 flex items-center justify-center">
-        <Loader message="Initializing..." />
-      </div>
-    );
-  }
-
-  if (!apiKey) {
-    return <ApiKeyInputForm />;
-  }
+  }, [selectedImage, prompt]);
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-200 font-sans">
