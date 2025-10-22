@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { Header } from './components/Header';
 import { ImageUploader } from './components/ImageUploader';
@@ -7,15 +8,15 @@ import { Loader } from './components/Loader';
 import { editImage } from './services/geminiService';
 import type { UploadedImage } from './types';
 
-// Fix: Define the AIStudio interface to resolve TypeScript errors.
-// The error "Property 'aistudio' must be of type 'AIStudio'" suggests a named
-// type is expected for the global window.aistudio property.
-interface AIStudio {
-  hasSelectedApiKey: () => Promise<boolean>;
-  openSelectKey: () => Promise<void>;
-}
-
+// Fix for line 20: Moved the AIStudio interface definition inside the `declare global`
+// block to correctly augment the global scope and resolve TypeScript
+// errors about duplicate or mismatched declarations.
 declare global {
+  interface AIStudio {
+    hasSelectedApiKey: () => Promise<boolean>;
+    openSelectKey: () => Promise<void>;
+  }
+
   interface Window {
     aistudio: AIStudio;
   }
@@ -31,7 +32,22 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let attempts = 0;
+    const maxAttempts = 50; // Try for 5 seconds
+
     const checkApiKey = async () => {
+      if (typeof window.aistudio?.hasSelectedApiKey !== 'function') {
+        attempts++;
+        if (attempts < maxAttempts) {
+          setTimeout(checkApiKey, 100);
+        } else {
+          console.error("window.aistudio not found after multiple attempts.");
+          setHasApiKey(false); 
+          setError("Could not connect to the API key manager. Please try reloading the page.");
+        }
+        return;
+      }
+
       try {
         const hasKey = await window.aistudio.hasSelectedApiKey();
         setHasApiKey(hasKey);
