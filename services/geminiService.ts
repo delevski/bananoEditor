@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Modality } from "@google/genai";
 
 const fileToBase64 = (file: File): Promise<string> => {
@@ -17,9 +16,6 @@ const fileToBase64 = (file: File): Promise<string> => {
 };
 
 export const editImage = async (imageFile: File, prompt: string): Promise<string> => {
-  if (!process.env.API_KEY) {
-    throw new Error("API_KEY environment variable is not set.");
-  }
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   const base64Data = await fileToBase64(imageFile);
