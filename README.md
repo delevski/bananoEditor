@@ -4,7 +4,7 @@ A powerful and intuitive web application that allows users to upload their image
 
 ## 📸 Screenshot
 
-![Gemini Image Editor Screenshot](https://storage.googleapis.com/aidevs/prompt-eng/gemini-image-editor-screenshot.png)
+<img src="https://storage.googleapis.com/aidevs/prompt-eng/gemini-image-editor-screenshot.png" alt="Gemini Image Editor Screenshot" width="700">
 
 ## ✨ Features
 
